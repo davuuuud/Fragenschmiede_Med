@@ -1,0 +1,87 @@
+# Veröffentlicht die Fragenschmiede Med auf GitHub Pages:
+#   https://davuuuud.github.io/Fragenschmiede_Med/
+#
+# Dieses Repository enthält keinen eigenen Code. Der Ablauf holt den
+# öffentlichen Quellcode der Fragenschmiede (davuuuud/Fragenschmiede), baut
+# ihn mit dem Profil "med" und veröffentlicht das Ergebnis. Zugangsschlüssel
+# zwischen den Repositories braucht es nicht: Der Quellcode wird nur gelesen.
+#
+# Ausgelöst wird er
+#   - von Hand: Reiter "Actions" → "Fragenschmiede Med veröffentlichen" →
+#     "Run workflow" — etwa wenn eine Änderung sofort online sein soll,
+#   - jede Nacht, damit Änderungen an der Fragenschmiede spätestens am
+#     nächsten Morgen auch hier ankommen,
+#   - bei jedem Push in dieses Repository.
+#
+# Achtung: GitHub schaltet nächtliche Abläufe in Repositorys ab, in denen 60
+# Tage lang nichts passiert ist. Dann einmal von Hand starten.
+
+name: Fragenschmiede Med veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Nur eine Veröffentlichung gleichzeitig; laufende werden nicht abgebrochen.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Quellcode der Fragenschmiede holen
+        uses: actions/checkout@v4
+        with:
+          repository: davuuuud/Fragenschmiede
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Dieselben Prüfungen wie bei der Fragenschmiede — sie prüfen ohnehin
+      # beide Profile. Eine fehlerhafte Fassung soll gar nicht erst online
+      # gehen.
+      - name: Tests
+        run: npm test
+
+      - name: Typprüfung
+        run: npm run check
+
+      - name: Bauen (Profil med)
+        run: npm run build -- --base=/${{ github.event.repository.name }}/
+        env:
+          PROFIL: med
+
+      - name: Netzprüfung
+        run: npm run pruefe:netz
+
+      - name: Größe
+        run: npm run pruefe:groesse
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  veroeffentlichen:
+    needs: bauen
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
